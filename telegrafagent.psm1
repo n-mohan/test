@@ -30,6 +30,7 @@ $telegrafconfpath = Join-Path $Env:Programfiles "telegraf\telegraf.conf"
 $metadataurl = "http://169.254.169.254/openstack/latest/meta_data.json"
 $metadatapath = Join-Path $Env:Programfiles "telegraf\meta_data.json"
 $param = "/c --service install"
+$text = "Write-Output `"longrunning,tag=1 ln=2,rcb=1,runq=2 `""
 
 function Log {
     param(
@@ -47,6 +48,7 @@ function Install-TelegrafAgent {
         unzip  $telegrafziplocation $telegrafpath
         Invoke-WebRequest -Uri $telegrafconfigUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafconfpath
         configchange $metadataurl $metadatapath $telegrafconfpath
+        createfile $text
         cd C:\'Program Files'\telegraf
         .\telegraf.exe --service install
         net start telegraf
