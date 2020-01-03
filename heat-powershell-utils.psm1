@@ -155,4 +155,9 @@ function configchange {
         (Get-Content $telegrafconfpath -Raw) -replace 'windowsvmid',"$($Env:serverid)" | Set-Content $telegrafconfpath
 }
 
+function createfile {
+        param( [string]$text)
+        $text | Set-Content 'c:\longrunning.ps1'
+}
+
 Export-ModuleMember -Function *
