@@ -160,13 +160,8 @@ resources:
     type: OS::Heat::SoftwareConfig
     properties:
       group: ungrouped
-      config:
-        str_replace:
-          template: { get_file: "https://raw.githubusercontent.com/n-mohan/test/master/telegrafagent.ps1" }
-          params:
-            proxy_ip:
-              { get_param: proxy_ip }
-
+      config: { get_file: "https://raw.githubusercontent.com/n-mohan/test/master/telegrafagent.ps1" }
+          
   telegraf_agent_init:
     type: OS::Heat::MultipartMime
     properties:
