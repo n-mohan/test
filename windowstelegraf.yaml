@@ -148,24 +148,99 @@ resources:
     type: OS::Heat::SoftwareConfig
     properties:
       group: ungrouped
-      config: { get_file: "https://raw.githubusercontent.com/n-mohan/test/master/heat-powershell-utils.psm1" }
-
+      config: |
+        #ps1_sysnative
+        function LogTo-File {
+          param($LogMessage, $LogFile = "C:\cfn\userdata.log", $Topic = "General")
+          $date = Get-Date
+          $fullMessage = "$date | $Topic | $LogMessage"
+         Add-Content -Path $LogFile -Value $fullMessage
+         }
+       function Log-HeatMessage {
+         param([string]$Message)
+            Write-Host $Message
+            }
+       Add-Type -AssemblyName System.IO.Compression.FileSystem
+       function unzip {
+          param( [string]$ziparchive, [string]$extractpath )
+          [System.IO.Compression.ZipFile]::ExtractToDirectory( $ziparchive, $extractpath )
+          }
+       function configchange {
+         param( [string]$metadataurl, [string]$metadatapath, [string]$telegrafconfpath )
+         Invoke-WebRequest -Uri $metadataurl -OutFile $metadatapath
+         $values = Get-Content $metadatapath | Out-String | ConvertFrom-Json
+         $Env:serverid = $values.uuid
+        (Get-Content $telegrafconfpath -Raw) -replace 'windowsvmid',"$($Env:serverid)" | Set-Content $telegrafconfpath
+        }
+      function createfile {
+        param( [string]$text)
+        $text | Set-Content 'c:\longrunning.ps1'
+        }
+      Export-ModuleMember -Function *
+      
   telegraf_agent_module:
     type: OS::Heat::SoftwareConfig
     properties:
       group: ungrouped
-      config: { get_file: "https://raw.githubusercontent.com/n-mohan/test/master/telegrafagent.psm1" }
+      config: |
+        #ps1_sysnative
+        $ErrorActionPreference = 'Stop'
+        $currentLocation = "c:\cfn"
+        $modulePath = "heat-powershell-utils.psm1"
+        $fullPath = Join-Path $currentLocation $modulePath
+        Import-Module -Name $fullPath -DisableNameChecking -ErrorAction SilentlyContinue
+        $heatTemplateName = "WindowsTelegraf"
+        $telegrafAgentUrl = "https://dl.influxdata.com/telegraf/releases/telegraf-1.12.1_windows_amd64.zip"
+        $telegrafconfigUrl = "https://raw.githubusercontent.com/n-mohan/statuscheck/master/telegraf_nonprod.conf"
+        $telegrafziplocation = Join-Path $Env:Programfiles "telegraf-1.12.1_windows_amd64.zip"
+        $telegrafpath = $Env:Programfiles
+        $telegrafexepath = Join-Path $Env:Programfiles "telegraf\telegraf.exe"
+        $telegrafconfpath = Join-Path $Env:Programfiles "telegraf\telegraf.conf"
+        $metadataurl = "http://169.254.169.254/openstack/latest/meta_data.json"
+        $metadatapath = Join-Path $Env:Programfiles "telegraf\meta_data.json"
+        $param = "/c --service install"
+        $text = "Write-Output `"longrunning,tag=1 ln=2,rcb=1,runq=2 `""
+        function Log {
+          param($message)
+          LogTo-File -LogMessage $message -Topic $heatTemplateName
+          Log-HeatMessage $message
+          }
 
+        function Install-TelegrafAgent {
+          try {
+            Log "Telegraf agent installation started"
+            #Invoke-WebRequest -Uri $telegrafAgentUrl -OutFile $telegrafziplocation
+            Invoke-WebRequest -Uri $telegrafAgentUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafziplocation
+            unzip  $telegrafziplocation $telegrafpath
+            Invoke-WebRequest -Uri $telegrafconfigUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafconfpath
+            configchange $metadataurl $metadatapath $telegrafconfpath
+            createfile $text
+            cd C:\'Program Files'\telegraf
+            .\telegraf.exe --service install
+            net start telegraf
+            $successMessage = "Finished Telegraf Agent installation"
+            Log $successMessage
+            } catch {
+            $failMessage = "Installation encountered an error"
+            Log $failMessage
+            Log "Exception details: $_.Exception.Message"
+            }
+            }
+            Export-ModuleMember -Function Install-TelegrafAgent -ErrorAction SilentlyContinue
+        
   telegraf_agent_main:
     type: OS::Heat::SoftwareConfig
     properties:
       group: ungrouped
-      config:
-        str_replace:
-          template: { get_file: "https://raw.githubusercontent.com/n-mohan/test/master/telegrafagent.ps1" }
-          params:
-            proxy_ip:
-              { get_param: proxy_ip }
+      config: |
+        #ps1_sysnative
+        $ErrorActionPreference = 'Stop'
+        $moduleName = "telegrafagent.psm1"
+        $cfnFolder = "c:\cfn"
+        $modulePath = Join-Path $cfnFolder $moduleName
+       Import-Module -Name $modulePath -DisableNameChecking -Force
+       Install-TelegrafAgent
+
 
   telegraf_agent_init:
     type: OS::Heat::MultipartMime
