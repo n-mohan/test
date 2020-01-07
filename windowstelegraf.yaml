@@ -148,13 +148,13 @@ resources:
     type: OS::Heat::SoftwareConfig
     properties:
       group: ungrouped
-      config: { get_file: /root/heat_files/heat-powershell-utils.psm1 }
+      config: { get_file: http://raw.githubusercontent.com/n-mohan/test/master/heat-powershell-utils.psm1 }
 
   telegraf_agent_module:
     type: OS::Heat::SoftwareConfig
     properties:
       group: ungrouped
-      config: { get_file: /root/heat_files/telegrafagent.psm1 }
+      config: { get_file: http://raw.githubusercontent.com/n-mohan/test/master/telegrafagent.psm1 }
 
   telegraf_agent_main:
     type: OS::Heat::SoftwareConfig
@@ -162,7 +162,7 @@ resources:
       group: ungrouped
       config:
         str_replace:
-          template: { get_file: /root/heat_files/telegrafagent.ps1 }
+          template: { get_file: http://raw.githubusercontent.com/n-mohan/test/master/telegrafagent.ps1 }
           params:
             proxy_ip:
               { get_param: proxy_ip }
