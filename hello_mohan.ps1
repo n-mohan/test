@@ -1,2 +1,2 @@
-##ps1_sysnative
+#ps1_sysnative
 Get-Process | Get-Member
