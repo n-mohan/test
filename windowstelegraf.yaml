@@ -13,7 +13,7 @@ parameters:
     type: string
     description: >
       Name of a KeyPair to enable SSH access to the instance.
-    default: mohan
+    default: monasca
 
   flavor:
     type: string
