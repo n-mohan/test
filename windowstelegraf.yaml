@@ -23,7 +23,7 @@ parameters:
   public_net:
     type: string
     description: name of public network for which floating IP addresses will be allocated.
-    default: non-prod2
+    default: ext-net
 
   availabilityZone:
     type: string
@@ -31,16 +31,16 @@ parameters:
 
   vmAvailabilityZone:
     type: string
-    default: JMNG-PE3-NONPROD
+    default: nova
 
   internalNet:
     type: string
     description: internal network name
-    default: mohankumar1n_network
+    default: default
   internalSubnet:
     type: string
     description: internal subnet name
-    default: mohankumar1n_subnet
+    default: default-subnet
   securityGroup:
     type: string
     description: security group name
@@ -59,7 +59,7 @@ parameters:
 
   bootImage:
     type: string
-    default: Windows-Server-2012-Std
+    default: Windows-server-heat
 
   proxy_ip:
     type: string
