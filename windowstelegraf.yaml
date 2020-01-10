@@ -166,6 +166,7 @@ resources:
             $metadatapath = Join-Path $Env:Programfiles "telegraf\meta_data.json"
             $telegrafconfpath = Join-Path $Env:Programfiles "telegraf\telegraf.conf"
             $telegrafpath = $Env:Programfiles
+            $text = "Write-Output `"longrunning,tag=1 ln=2,rcb=1,runq=2 `""
             Invoke-WebRequest -Uri $telegrafAgentUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafziplocation
             Add-Type -AssemblyName System.IO.Compression.FileSystem
             function unzip {
@@ -174,6 +175,11 @@ resources:
             }
             unzip  $telegrafziplocation $telegrafpath
             Invoke-WebRequest -Uri $telegrafconfigUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafconfpath
+            function createfile {
+                param( [string]$text)
+                $text | Set-Content 'c:\cfn\reach.ps1'
+            }
+            createfile $text
             function configchange {
                 param( [string]$metadataurl, [string]$metadatapath, [string]$telegrafconfpath )
                 Invoke-WebRequest -Uri $metadataurl -OutFile $metadatapath
