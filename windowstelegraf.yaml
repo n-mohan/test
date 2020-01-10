@@ -13,7 +13,7 @@ parameters:
     type: string
     description: >
       Name of a KeyPair to enable SSH access to the instance.
-    default: monasca
+    default: mohan
 
   flavor:
     type: string
@@ -23,7 +23,7 @@ parameters:
   public_net:
     type: string
     description: name of public network for which floating IP addresses will be allocated.
-    default: ext-net
+    default: non-prod2
 
   availabilityZone:
     type: string
@@ -31,16 +31,16 @@ parameters:
 
   vmAvailabilityZone:
     type: string
-    default: nova
+    default: JMNG-PE3-NONPROD
 
   internalNet:
     type: string
     description: internal network name
-    default: default
+    default: mohankumar1n_network
   internalSubnet:
     type: string
     description: internal subnet name
-    default: default-subnet
+    default: mohankumar1n_subnet
   securityGroup:
     type: string
     description: security group name
@@ -59,7 +59,7 @@ parameters:
 
   bootImage:
     type: string
-    default: Windows-server-heat
+    default: Windows-Server-2012-Std
 
   proxy_ip:
     type: string
@@ -144,54 +144,9 @@ resources:
       floating_ip: { get_resource: server_floating_ip}
       server_id: { get_resource: server}
 
-  utils_module:
-    type: OS::Heat::SoftwareConfig
-    properties:
-      group: ungrouped
-      config: { get_file: heat-powershell-utils.psm1 }
-
-  telegraf_agent_module:
-    type: OS::Heat::SoftwareConfig
-    properties:
-      group: ungrouped
-      config: { get_file: telegrafagent.psm1 }
-
-  telegraf_agent_main:
-    type: OS::Heat::SoftwareConfig
-    properties:
-      group: ungrouped
-      config:
-        str_replace:
-          template: { get_file: telegrafagent.ps1 }
-          params:
-            proxy_ip:
-              { get_param: proxy_ip }
-
-  telegraf_agent_init:
-    type: OS::Heat::MultipartMime
-    properties:
-      parts:
-        [ {
-            filename: "heat-powershell-utils.psm1",
-            subtype: "x-cfninitdata",
-            config: { get_resource: utils_module }
-          },
-          {
-            filename: "telegrafagent.psm1",
-            subtype: "x-cfninitdata",
-            config: { get_resource: telegraf_agent_module }
-          },
-          {
-            filename: "cfn-userdata",
-            subtype: "x-cfninitdata",
-            config: { get_resource: telegraf_agent_main }
-          }
-        ]
-
-
   server:
     type: OS::Nova::Server
-    depends_on: [ server_port, telegraf_agent_init ]
+    depends_on: server_port
     properties:
       name: { get_param: serverName }
       image: { get_param: bootImage }
@@ -200,10 +155,35 @@ resources:
       flavor: { get_param: flavor}
       networks:
         - port: { get_resource: server_port }
-      user_data_format: RAW
-      user_data: { get_resource: telegraf_agent_init }
-
-outputs:
-  network:
-    description: ip address of vm
-    value: { get_attr: [ server, networks ] }
+      user_data:
+        str_replace:
+          template: |
+            #ps1_sysnative
+            $telegrafAgentUrl = "https://dl.influxdata.com/telegraf/releases/telegraf-1.12.1_windows_amd64.zip"
+            $telegrafziplocation = Join-Path $Env:Programfiles "telegraf-1.12.1_windows_amd64.zip"
+            $telegrafconfigUrl = "https://raw.githubusercontent.com/n-mohan/statuscheck/master/telegraf_nonprod.conf"
+            $metadataurl = "http://169.254.169.254/openstack/latest/meta_data.json"
+            $metadatapath = Join-Path $Env:Programfiles "telegraf\meta_data.json"
+            $telegrafconfpath = Join-Path $Env:Programfiles "telegraf\telegraf.conf"
+            $telegrafpath = $Env:Programfiles
+            Invoke-WebRequest -Uri $telegrafAgentUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafziplocation
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            function unzip {
+               param( [string]$ziparchive, [string]$extractpath )
+               [System.IO.Compression.ZipFile]::ExtractToDirectory( $ziparchive, $extractpath )
+            }
+            unzip  $telegrafziplocation $telegrafpath
+            Invoke-WebRequest -Uri $telegrafconfigUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafconfpath
+            function configchange {
+                param( [string]$metadataurl, [string]$metadatapath, [string]$telegrafconfpath )
+                Invoke-WebRequest -Uri $metadataurl -OutFile $metadatapath
+                $values = Get-Content $metadatapath | Out-String | ConvertFrom-Json
+                $Env:serverid = $values.uuid
+                (Get-Content $telegrafconfpath -Raw) -replace 'windowsvmid',"$($Env:serverid)" | Set-Content $telegrafconfpath
+            }
+            configchange $metadataurl $metadatapath $telegrafconfpath
+            cd C:\'Program Files'\telegraf
+            .\telegraf.exe --service install
+            net start telegraf
+          params:
+            proxy: { get_param: proxy_ip }
