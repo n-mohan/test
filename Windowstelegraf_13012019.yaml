@@ -1,0 +1,195 @@
+heat_template_version: 2016-10-14
+
+description: >
+  Create a simple VM using Heat
+
+
+parameters:
+  sg_type:
+    type: string
+    default: default
+
+  key:
+    type: string
+    description: >
+      Name of a KeyPair to enable SSH access to the instance.
+    default: mohan
+
+  flavor:
+    type: string
+    description: Instance type for the docker server.
+    default: m1.large
+
+  public_net:
+    type: string
+    description: name of public network for which floating IP addresses will be allocated.
+    default: non-prod2
+
+  availabilityZone:
+    type: string
+    default: nova
+
+  vmAvailabilityZone:
+    type: string
+    default: JMNG-PE3-NONPROD
+
+  internalNet:
+    type: string
+    description: internal network name
+    default: mohankumar1n_network
+  internalSubnet:
+    type: string
+    description: internal subnet name
+    default: mohankumar1n_subnet
+  securityGroup:
+    type: string
+    description: security group name
+    default: default123
+  volumeName:
+    type: string
+    description: name of the bootable volume
+    default: mohan
+  serverName:
+    type: string
+    description: name of the instance
+    default: mohan-telegraf
+  volumeSize:
+    type: number
+    default: 40
+
+  bootImage:
+    type: string
+    default: Windows-Server-2012-Std
+
+  proxy_ip:
+    type: string
+    default: http://10.157.240.254:8678
+
+  istelegrafon:
+    type: string
+    default: restart
+
+  isprodvm:
+    type: string
+    default: non-prod
+
+  commandLog:
+    type: boolean
+    default: false
+
+  telegraf_agent_max_timeout:
+    type: number
+    default: 3600
+    description: >
+      The maximum allowed time for the telegraf Agent instalation to finish.
+
+
+conditions:
+  custom: {equals: [{get_param: sg_type}, "custom"]}
+  default: {equals: [{get_param: sg_type}, "default"]}
+
+
+resources:
+  security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name: { get_param: securityGroup }
+      description: Default security group created by JAWS console
+      rules: [
+             {"direction": ingress,
+              "remote_ip_prefix": 0.0.0.0/0,
+              "port_range_min": 22,
+              "port_range_max": 22,
+              "ethertype": IPv4,
+              "protocol": tcp},
+              {"direction": ingress,
+              "remote_ip_prefix": 0.0.0.0/0,
+              "port_range_min": 80,
+              "port_range_max": 80,
+              "ethertype": IPv4,
+              "protocol": tcp},
+              {"direction": ingress,
+               "remote_ip_prefix": 0.0.0.0/0,
+               "port_range_min": 3389,
+               "port_range_max": 3389,
+               "ethertype": IPv4,
+               "protocol": tcp},
+              {"direction": ingress,
+              "remote_ip_prefix": 0.0.0.0/0,
+              "port_range_min": 443,
+              "port_range_max": 443,
+              "ethertype": IPv4,
+              "protocol": tcp}
+
+            ]
+    condition: default
+
+  server_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: internalNet }
+      fixed_ips:
+        - subnet_id: { get_param: internalSubnet  }
+      security_groups:
+        - { if: ["custom", { get_param: securityGroup }, { get_resource: security_group } ] }
+
+  server_floating_ip:
+    type: OS::Nova::FloatingIP
+    properties:
+      pool: { get_param: public_net}
+
+  associate_floating_ip:
+    type: OS::Nova::FloatingIPAssociation
+    properties:
+      floating_ip: { get_resource: server_floating_ip}
+      server_id: { get_resource: server}
+
+  server:
+    type: OS::Nova::Server
+    depends_on: server_port
+    properties:
+      name: { get_param: serverName }
+      image: { get_param: bootImage }
+      availability_zone: { get_param: vmAvailabilityZone }
+      key_name: { get_param: key }
+      flavor: { get_param: flavor}
+      networks:
+        - port: { get_resource: server_port }
+      user_data:
+        str_replace:
+          template: |
+            #ps1_sysnative
+            $telegrafAgentUrl = "https://dl.influxdata.com/telegraf/releases/telegraf-1.12.1_windows_amd64.zip"
+            $telegrafziplocation = Join-Path $Env:Programfiles "telegraf-1.12.1_windows_amd64.zip"
+            $telegrafconfigUrl = "https://raw.githubusercontent.com/n-mohan/statuscheck/master/telegraf_nonprod.conf"
+            $metadataurl = "http://169.254.169.254/openstack/latest/meta_data.json"
+            $metadatapath = Join-Path $Env:Programfiles "telegraf\meta_data.json"
+            $telegrafconfpath = Join-Path $Env:Programfiles "telegraf\telegraf.conf"
+            $telegrafpath = $Env:Programfiles
+            $text = "Write-Output `"longrunning,tag=1 ln=2,rcb=1,runq=2 `""
+            Invoke-WebRequest -Uri $telegrafAgentUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafziplocation
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            function unzip {
+               param( [string]$ziparchive, [string]$extractpath )
+               [System.IO.Compression.ZipFile]::ExtractToDirectory( $ziparchive, $extractpath )
+            }
+            unzip  $telegrafziplocation $telegrafpath
+            Invoke-WebRequest -Uri $telegrafconfigUrl -Proxy 'http://10.157.240.254:8678' -OutFile $telegrafconfpath
+            function createfile {
+                param( [string]$text)
+                $text | Set-Content 'c:\cfn\reach.ps1'
+            }
+            createfile $text
+            function configchange {
+                param( [string]$metadataurl, [string]$metadatapath, [string]$telegrafconfpath )
+                Invoke-WebRequest -Uri $metadataurl -OutFile $metadatapath
+                $values = Get-Content $metadatapath | Out-String | ConvertFrom-Json
+                $Env:serverid = $values.uuid
+                (Get-Content $telegrafconfpath -Raw) -replace 'windowsvmid',"$($Env:serverid)" | Set-Content $telegrafconfpath
+            }
+            configchange $metadataurl $metadatapath $telegrafconfpath
+            cd C:\'Program Files'\telegraf
+            .\telegraf.exe --service install
+            net start telegraf
+          params:
+            proxy: { get_param: proxy_ip }
